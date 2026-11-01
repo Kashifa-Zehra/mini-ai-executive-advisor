@@ -4,13 +4,15 @@ Streamlit app: document Q&A with citations, Finance + HR advisors with auto-rout
 
 ## Run
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+# Mac/Linux:  source .venv/bin/activate
+# Windows:    .venv\Scripts\activate
 pip install -r requirements.txt
 python seed.py                      # loads synthetic sample docs (incl. conflicts + a confidential file)
-export ANTHROPIC_API_KEY=sk-...     # optional; without it the app uses extractive fallback answers
+# optional: set ANTHROPIC_API_KEY (Windows: set ANTHROPIC_API_KEY=...); without it the app uses extractive fallback answers
 streamlit run app.py
-pytest -q                           # Task 6 reliability tests
 ```
+Run `pytest -q` in a second terminal to execute the reliability tests.
 Logins (demo only): `admin/admin123` (Administrator), `alice/user123` (Standard User).
 
 **Note:** the LLM layer is optional. Without `ANTHROPIC_API_KEY`, the app runs in fallback mode: retrieval, access control, routing, conflict detection and financial calculations still work, and answers show the best matching passage. Setting the key enables written answers with citations.
@@ -41,6 +43,6 @@ Missing info, conflicting HR docs, conflicting finance figures, unauthorized ret
 Docker container behind HTTPS reverse proxy (nginx/Caddy) with SSO (OIDC) replacing demo logins; secrets in env/secret manager; move SQLite to Postgres and BM25 to a vector DB (pgvector/Chroma) for scale; encrypt storage; ship audit table to central logging with alerts on `DENIED_*`/`llm_failure`; health check, backups, dependency scanning, rate limiting; expand with more advisors, OCR, Slack/Teams webhooks.
 
 ## Declaration
-- Components I personally developed: set up and ran the system locally, tested every scenario in the brief, found and fixed a UI bug (success message shown before the upload was processed), applied an overwrite-protection security fix, resolved formatting and syntax issues, and prepared the deployment notes.
-- AI tools used: Claude (generated the initial scaffold, which I reviewed, tested and modified)
+- AI tools used: Claude generated the initial scaffold (application code, tests, README, deployment notes) and helped diagnose issues during testing. I ran, tested and modified the result.
+- What I did myself: set up and ran the system locally, tested the scenarios in the brief end to end, applied and verified fixes during testing (a UI bug where a success message appeared before an upload was processed, and a security gap that let a standard user overwrite a restricted document), configured Git and GitHub, and prepared the submission. I can explain and modify the code.
 - External assistance: none beyond the AI tool
