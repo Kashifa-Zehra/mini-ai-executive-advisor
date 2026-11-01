@@ -13,6 +13,7 @@ python seed.py                      # loads synthetic sample docs (incl. conflic
 streamlit run app.py
 ```
 Run `pytest -q` in a second terminal to execute the reliability tests.
+
 Logins (demo only): `admin/admin123` (Administrator), `alice/user123` (Standard User).
 
 **Note:** the LLM layer is optional. Without `ANTHROPIC_API_KEY`, the app runs in fallback mode: retrieval, access control, routing, conflict detection and financial calculations still work, and answers show the best matching passage. Setting the key enables written answers with citations.
