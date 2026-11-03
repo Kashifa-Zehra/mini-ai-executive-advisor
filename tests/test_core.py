@@ -85,3 +85,9 @@ def test_conflict_shown_only_for_topic_asked():
 def test_finance_conflict_states_value_used():
     ans = core.ask("What is revenue growth and net margin?", "alice", "user")["answer"]
     assert "calculations above use" in ans and "1,480,000" in ans and "1,500,000" in ans
+
+def test_confidential_doc_cannot_be_downgraded_even_by_admin():
+    with pytest.raises(PermissionError): core.process_upload("salary_bands_confidential.txt", b"now public", "public", "admin", "admin")
+    assert core.search("CEO salary", "user") == []                          # still hidden from standard users
+    with pytest.raises(PermissionError): core.process_upload("salary_bands_confidential.txt", b"x", "public", "alice", "user")
+    with core.conn() as c: assert c.execute("select count(*) from audit where event='DENIED_downgrade'").fetchone()[0] >= 1
