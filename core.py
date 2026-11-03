@@ -104,6 +104,25 @@ def verify_figure(claimed, computed, tol=0.01):
     """True if an (LLM- or human-stated) figure matches the code-computed one."""
     return abs(claimed - computed) <= tol * max(abs(computed), 1e-9)
 
+def period_key(p):
+    """Chronological sort key. Returns (kind, year, quarter): 'Q' for quarters, 'Y' for years. None if unrecognised."""
+    m = re.fullmatch(r"Q([1-4])(\d{4})", p)
+    if m: return ("Q", int(m.group(2)), int(m.group(1)))
+    m = re.fullmatch(r"(?:FY)?(\d{4})", p)
+    return ("Y", int(m.group(1)), 0) if m else None
+
+def growth_lines(rev):
+    """rev: {period_label: revenue}. Compares the two latest periods of the SAME kind (quarter vs quarter, year vs year),
+    in chronological order - never by text order. Returns display lines."""
+    out = []
+    for kind in ("Y", "Q"):
+        series = sorted((period_key(p), p, v) for p, v in rev.items() if period_key(p) and period_key(p)[0] == kind)
+        if len(series) < 2: continue
+        (_, a, old), (_, b, new) = series[-2], series[-1]
+        try: out.append(f"Revenue growth {a}->{b}: {growth(old, new):.1f}%  [computed in Python]")
+        except ValueError as e: out.append(f"Revenue growth {a}->{b}: not computed ({e})")
+    return out
+
 FIN_RE = re.compile(r"(?i)(revenue|net income|expenses?)\s*(?:for\s*)?(FY\s?\d{4}|Q[1-4]\s?\d{4}|\d{4})\s*[:=]\s*\$?\s*([\d,]+(?:\.\d+)?)")
 def extract_metrics(hits):
     out = collections.defaultdict(list)
@@ -126,8 +145,7 @@ def finance_answer(q, role):
     periods = sorted({p for _, p in met})
     calc = []
     try:
-        revs = [(p, val[("revenue", p)]) for p in periods if ("revenue", p) in val]
-        if len(revs) >= 2: calc.append(f"Revenue growth {revs[-2][0]}->{revs[-1][0]}: {growth(revs[-2][1], revs[-1][1]):.1f}%  [computed in Python]")
+        calc += growth_lines({p: val[("revenue", p)] for p in periods if ("revenue", p) in val})
         for p in periods:
             if ("net income", p) in val and ("revenue", p) in val: calc.append(f"Net margin {p}: {margin(val[('net income', p)], val[('revenue', p)]):.1f}%  [computed in Python]")
     except ValueError as e: calc.append(f"Calculation error handled: {e}")
