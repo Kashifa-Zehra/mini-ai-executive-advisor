@@ -8,7 +8,7 @@ ALLOWED = {"admin": ("public", "confidential"), "user": ("public",)}   # role ->
 h = lambda p: hashlib.sha256(p.encode()).hexdigest()
 USERS = {"admin": ("admin", h("admin123")), "alice": ("user", h("user123"))}  # DEMO ONLY
 NO_EVIDENCE = "I cannot find sufficient evidence in the documents available to you."
-STOP = set("the a an of to in is are what for and or on with how do does our my i it be by from at as".split())
+STOP = set("the a an of to in is are what for and or on with how do does our my i it be by from at as many much get give tell about me we you your can will would should please there any which who when where why have has had was were this that if policy policies".split())
 
 def conn():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
@@ -51,7 +51,7 @@ def ingest(name, text, cls="public"):
 # ---------- retrieval (ACL applied in SQL BEFORE scoring, so restricted text never reaches the LLM) ----------
 tok = lambda t: [w.rstrip("s") for w in re.findall(r"[a-z0-9]+", t.lower()) if w not in STOP]
 
-def search(query, role, k=4, min_cov=0.5):
+def search(query, role, k=4, min_cov=0.6):
     cls = ALLOWED.get(role, ())
     if not cls: return []
     with conn() as c:
@@ -61,9 +61,11 @@ def search(query, role, k=4, min_cov=0.5):
     avg = sum(map(len, docs)) / N or 1
     df = collections.Counter(w for d in docs for w in set(d))
     hits = []
+    # evidence threshold: short questions (<=3 key terms) must match ALL terms, longer ones at least min_cov of them
+    need = len(q) if (len(q) <= 3 and min_cov >= 0.5) else max(1, math.ceil(min_cov * len(q) - 1e-9))
     for r, d in zip(rows, docs):
         tf = collections.Counter(d); m = q & set(d)
-        if not q or len(m) / len(q) < min_cov: continue          # evidence threshold
+        if not q or len(m) < need: continue
         s = sum(math.log(1 + (N - df[w] + .5) / (df[w] + .5)) * tf[w] * 2.5 / (tf[w] + 1.5 * (.25 + .75 * len(d) / avg)) for w in m)
         hits.append({"doc": r["doc"], "idx": r["idx"], "text": r["text"], "score": round(s, 2)})
     return sorted(hits, key=lambda x: -x["score"])[:k]
@@ -150,7 +152,7 @@ def finance_answer(q, role):
             if ("net income", p) in val and ("revenue", p) in val: calc.append(f"Net margin {p}: {margin(val[('net income', p)], val[('revenue', p)]):.1f}%  [computed in Python]")
     except ValueError as e: calc.append(f"Calculation error handled: {e}")
     body = "**Extracted figures**\n" + "\n".join(lines) + "\n\n**Calculations**\n" + "\n".join(f"- {c}" for c in calc or ["not enough data"])
-    if conf: body += "\n\n**CONFLICT**\n" + "\n".join(f"- {k[0].title()} {k[1]}: " + " vs ".join(f"{v:,.0f} ({d})" for v, d in vs) for k, vs in conf.items())
+    if conf: body += "\n\n**CONFLICT**\n" + "\n".join(f"- {k[0].title()} {k[1]}: " + " vs ".join(f"{v:,.0f} ({d})" for v, d in vs) + f"  -> calculations above use {vs[0][0]:,.0f} ({vs[0][1]}); confirm the authoritative figure" for k, vs in conf.items())
     an = llm("You are a finance advisor. Write a 3-sentence analysis using ONLY these verified figures. Do not do any new arithmetic.", body)
     return {"answer": body + "\n\n**Analysis**\n" + (an or "(LLM unavailable - figures above are code-verified.)"), "sources": sources(hits), "advisor": "finance"}
 
@@ -163,6 +165,10 @@ def hr_answer(q, role):
     for x in search(q, role, k=10):
         for t, n, u in HR_RE.findall(x["text"]): facts[t.lower()].append((f"{n} {u.rstrip('s')}s", x["doc"]))
     conf = conflicts(facts)
+    qt = set(tok(q))
+    asked = {k for k in facts if set(tok(k)) <= qt}                       # HR topics the question explicitly names
+    if asked: conf = {k: v for k, v in conf.items() if k in asked}        # only report conflicts on those topics
+                                                                          # (generic question, e.g. "leave policy": show all)
     a = llm(GROUND + " Also state if sources conflict or information is missing.", f"Sources:\n{ctx(hits)}\n\nQuestion: {q}") or "(LLM unavailable)\n\n" + hits[0]["text"]
     if conf: a += "\n\n**CONFLICT DETECTED - verify with HR before acting:**\n" + "\n".join(f"- {k}: " + " vs ".join(f"{v} ({d})" for v, d in vs) for k, vs in conf.items())
     return {"answer": a, "sources": sources(hits), "advisor": "hr"}
