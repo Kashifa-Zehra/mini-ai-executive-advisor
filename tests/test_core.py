@@ -66,3 +66,22 @@ def test_end_to_end_quarter_order_from_documents():
     finally:
         with core.conn() as c: c.execute("delete from chunks where doc='zz_quarterly.txt'")
     assert "Q42024->Q12025: 100.0%" in ans and "-50" not in ans
+
+# ---- stricter evidence + topic-specific conflicts + conflict transparency ----
+def test_partial_keyword_match_is_not_evidence():
+    for q in ("What is the notice period?", "What is the maternity leave policy?"):
+        assert core.NO_EVIDENCE in core.ask(q, "alice", "user")["answer"], q
+
+def test_known_questions_still_answered():
+    assert "3 months" in core.ask("What is the probation period?", "alice", "user")["answer"]
+    assert "10 days" in core.ask("How many sick leave days do employees get?", "alice", "user")["answer"]
+
+def test_conflict_shown_only_for_topic_asked():
+    sick = core.ask("How many sick leave days do employees get?", "alice", "user")["answer"]
+    assert "CONFLICT" not in sick                                       # annual-leave conflict is irrelevant here
+    assert "CONFLICT" in core.ask("What is the annual leave policy?", "alice", "user")["answer"]
+    assert "CONFLICT" in core.ask("What is the leave policy?", "alice", "user")["answer"]   # generic question: still warn
+
+def test_finance_conflict_states_value_used():
+    ans = core.ask("What is revenue growth and net margin?", "alice", "user")["answer"]
+    assert "calculations above use" in ans and "1,480,000" in ans and "1,500,000" in ans
