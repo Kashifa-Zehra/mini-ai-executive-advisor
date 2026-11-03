@@ -204,6 +204,8 @@ def process_upload(name, data, cls, user, role, notify_to="manager@example.com")
     with conn() as c: ex = c.execute("select cls from chunks where doc=? limit 1", (name,)).fetchone()
     if ex and ex["cls"] not in ALLOWED.get(role, ()):
         log(user, "DENIED_overwrite", name); raise PermissionError("A restricted document with this name already exists")
+    if ex and ex["cls"] == "confidential" and cls != "confidential":      # nobody (even admin) may silently downgrade a confidential doc
+        log(user, "DENIED_downgrade", name); raise PermissionError("A confidential document cannot be re-uploaded as public")
     text = read_file(name, data); ingest(name, text, cls)
     s = llm("Summarise this business document in 3 bullet points.", text[:6000]) or " ".join(re.split(r"(?<=[.!?])\s", text.strip())[:2])
     with conn() as c: c.execute("insert into reports values(?,?,?)", (datetime.datetime.now().isoformat(timespec="seconds"), name, s))
