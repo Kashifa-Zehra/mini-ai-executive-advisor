@@ -37,13 +37,32 @@ def test_automation(tmp_path):
     core.process_upload("q3.txt", b"Q3 was strong. Sales grew. More text.", "public", "admin", "admin")
     with core.conn() as c: assert c.execute("select count(*) from reports where doc='q3.txt'").fetchone()[0] == 1
 
-def test_cannot_overwrite_restricted_document():
-    with pytest.raises(PermissionError):
-        core.process_upload("salary_bands_confidential.txt", b"fake", "public", "alice", "user")
-    assert "400,000" in core.ask("What is the CEO salary?", "admin", "admin")["answer"]
-
-
 def test_standard_user_cannot_overwrite_restricted_doc():
     with pytest.raises(PermissionError): core.process_upload("salary_bands_confidential.txt", b"overwritten", "public", "alice", "user")
     assert "400,000" in core.ask("What is the CEO salary?", "admin", "admin")["answer"]   # original content intact
     with core.conn() as c: assert c.execute("select count(*) from audit where event='DENIED_overwrite'").fetchone()[0] >= 1
+
+# ---- regression: period ordering (Q4 2024 -> Q1 2025 was reported as -50% instead of +100%) ----
+def test_growth_quarters_chronological():
+    assert core.growth_lines({"Q42024": 100, "Q12025": 200}) == ["Revenue growth Q42024->Q12025: 100.0%  [computed in Python]"]
+
+def test_growth_decrease_unchanged_and_order_independent():
+    assert "-50.0%" in core.growth_lines({"Q42024": 200, "Q12025": 100})[0]
+    assert "0.0%" in core.growth_lines({"Q12025": 150, "Q42024": 150})[0]
+    assert core.growth_lines({"Q12025": 200, "Q42024": 100}) == core.growth_lines({"Q42024": 100, "Q12025": 200})  # input order irrelevant
+
+def test_growth_zero_or_missing_baseline():
+    assert "not computed" in core.growth_lines({"Q42024": 0, "Q12025": 200})[0]
+    assert core.growth_lines({"Q12025": 200}) == []                      # single period: nothing to compare
+
+def test_growth_never_mixes_quarters_and_years():
+    out = core.growth_lines({"2024": 1000, "2025": 1500, "Q42024": 100, "Q12025": 200})
+    assert any("2024->2025: 50.0%" in x for x in out) and any("Q42024->Q12025: 100.0%" in x for x in out)
+    assert core.growth_lines({"2025": 1500, "Q42024": 100}) == []         # year vs quarter must not be compared
+
+def test_end_to_end_quarter_order_from_documents():
+    core.ingest("zz_quarterly.txt", "Quarterly\n\nRevenue Q1 2025: 200\nRevenue Q4 2024: 100\n", "public")   # stored newest-first on purpose
+    try: ans = core.ask("What is revenue growth?", "alice", "user")["answer"]
+    finally:
+        with core.conn() as c: c.execute("delete from chunks where doc='zz_quarterly.txt'")
+    assert "Q42024->Q12025: 100.0%" in ans and "-50" not in ans
