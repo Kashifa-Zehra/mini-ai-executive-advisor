@@ -41,3 +41,9 @@ def test_cannot_overwrite_restricted_document():
     with pytest.raises(PermissionError):
         core.process_upload("salary_bands_confidential.txt", b"fake", "public", "alice", "user")
     assert "400,000" in core.ask("What is the CEO salary?", "admin", "admin")["answer"]
+
+
+def test_standard_user_cannot_overwrite_restricted_doc():
+    with pytest.raises(PermissionError): core.process_upload("salary_bands_confidential.txt", b"overwritten", "public", "alice", "user")
+    assert "400,000" in core.ask("What is the CEO salary?", "admin", "admin")["answer"]   # original content intact
+    with core.conn() as c: assert c.execute("select count(*) from audit where event='DENIED_overwrite'").fetchone()[0] >= 1
